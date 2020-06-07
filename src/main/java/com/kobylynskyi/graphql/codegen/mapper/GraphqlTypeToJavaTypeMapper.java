@@ -1,7 +1,5 @@
 package com.kobylynskyi.graphql.codegen.mapper;
 
-import static graphql.language.OperationDefinition.*;
-
 import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.ParameterDefinition;
 import com.kobylynskyi.graphql.codegen.utils.Utils;
@@ -10,6 +8,8 @@ import graphql.language.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static graphql.language.OperationDefinition.Operation;
 
 /**
  * Map GraphQL type to Java type
@@ -29,7 +29,7 @@ class GraphqlTypeToJavaTypeMapper {
     public static ParameterDefinition map(MappingConfig mappingConfig, FieldDefinition fieldDef, String parentTypeName) {
         ParameterDefinition parameter = new ParameterDefinition();
         parameter.setName(MapperUtils.capitalizeIfRestricted(fieldDef.getName()));
-        parameter.setType(getJavaType(mappingConfig, fieldDef.getType(), fieldDef.getName(), parentTypeName));
+        parameter.setType(getJavaType(mappingConfig, fieldDef, parentTypeName));
         parameter.setAnnotations(getAnnotations(mappingConfig, fieldDef.getType(), fieldDef.getName(), parentTypeName, false));
         return parameter;
     }
@@ -80,6 +80,37 @@ class GraphqlTypeToJavaTypeMapper {
             return getJavaType(mappingConfig, ((NonNullType) graphqlType).getType(), name, parentTypeName);
         }
         return null;
+    }
+
+    static String getJavaType(MappingConfig mappingConfig, FieldDefinition fieldDef, String parentTypeName) {
+        Type graphqlType = fieldDef.getType();
+        String name = fieldDef.getName();
+        if (graphqlType instanceof TypeName) {
+            String javaType = getJavaType(mappingConfig, ((TypeName) graphqlType).getName(), name, parentTypeName);
+            return wrapGenericTypeIfRequired(mappingConfig.getCustomGenericsMapping(), fieldDef.getDirectives(), javaType);
+        } else if (graphqlType instanceof ListType) {
+            String mappedCollectionType = getJavaType(mappingConfig, ((ListType) graphqlType).getType(), name, parentTypeName);
+            return wrapIntoJavaCollection(mappedCollectionType);
+        } else if (graphqlType instanceof NonNullType) {
+            return getJavaType(mappingConfig, ((NonNullType) graphqlType).getType(), name, parentTypeName);
+        }
+        return null;
+    }
+
+    private static String wrapGenericTypeIfRequired(Map<String, String> genericsMap, List<Directive> directives, String javaType) {
+        if (!genericsMap.isEmpty() && !directives.isEmpty()) {
+            return directives.stream()
+                    .filter(directive -> genericsMap.containsKey(directive.getName()))
+                    .map(directive -> {
+                        String argumentName = genericsMap.get(directive.getName());
+                        return directive.getArgument(argumentName).getValue();
+                    })
+                    .filter(value -> value instanceof StringValue)
+                    .map(value -> String.format("%s<%s>", javaType, ((StringValue) value).getValue()))
+                    .findFirst()
+                    .orElse(javaType);
+        }
+        return javaType;
     }
 
     /**

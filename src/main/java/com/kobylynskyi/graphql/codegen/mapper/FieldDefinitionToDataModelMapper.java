@@ -3,10 +3,13 @@ package com.kobylynskyi.graphql.codegen.mapper;
 import com.kobylynskyi.graphql.codegen.model.MappingConfig;
 import com.kobylynskyi.graphql.codegen.model.OperationDefinition;
 import com.kobylynskyi.graphql.codegen.utils.Utils;
+import graphql.language.Directive;
 import graphql.language.FieldDefinition;
+import graphql.language.StringValue;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static com.kobylynskyi.graphql.codegen.model.DataModelFields.*;
@@ -49,12 +52,13 @@ public class FieldDefinitionToDataModelMapper {
     static OperationDefinition mapFieldDefinition(MappingConfig mappingConfig, FieldDefinition fieldDef, String parentTypeName) {
         OperationDefinition operation = new OperationDefinition();
         operation.setName(fieldDef.getName());
-        String javaType = GraphqlTypeToJavaTypeMapper.getJavaType(mappingConfig, fieldDef.getType(), fieldDef.getName(), parentTypeName);
+        String javaType = GraphqlTypeToJavaTypeMapper.getJavaType(mappingConfig, fieldDef, parentTypeName);
         operation.setType(GraphqlTypeToJavaTypeMapper.wrapIntoSubscriptionIfRequired(mappingConfig, javaType, parentTypeName));
         operation.setAnnotations(GraphqlTypeToJavaTypeMapper.getAnnotations(mappingConfig, fieldDef.getType(), fieldDef.getName(), parentTypeName));
         operation.setParameters(InputValueDefinitionToParameterMapper.map(mappingConfig, fieldDef.getInputValueDefinitions(), fieldDef.getName()));
         return operation;
     }
+
 
     /**
      * Examples:

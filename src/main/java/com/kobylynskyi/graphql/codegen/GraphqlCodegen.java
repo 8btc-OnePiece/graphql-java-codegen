@@ -1,6 +1,7 @@
 package com.kobylynskyi.graphql.codegen;
 
 import com.kobylynskyi.graphql.codegen.mapper.*;
+import com.kobylynskyi.graphql.codegen.model.OperationDefinition;
 import com.kobylynskyi.graphql.codegen.model.*;
 import com.kobylynskyi.graphql.codegen.supplier.MappingConfigSupplier;
 import freemarker.template.TemplateException;
@@ -10,9 +11,13 @@ import lombok.Setter;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Generator of:
@@ -48,6 +53,14 @@ public class GraphqlCodegen {
         initDefaultValues(mappingConfig);
     }
 
+    public GraphqlCodegen(String[] graphqlSchemaPaths, File outputDir, MappingConfig mappingConfig, MappingConfigSupplier externalMappingConfigSupplier) {
+        this.schemas = releaseSchemasInDirPath(graphqlSchemaPaths);
+        this.outputDir = outputDir;
+        this.mappingConfig = mappingConfig;
+        this.mappingConfig.combine(externalMappingConfigSupplier != null ? externalMappingConfigSupplier.get() : null);
+        initDefaultValues(mappingConfig);
+    }
+
     private void initDefaultValues(MappingConfig mappingConfig) {
         if (mappingConfig.getModelValidationAnnotation() == null) {
             mappingConfig.setModelValidationAnnotation(DefaultMappingConfigValues.DEFAULT_VALIDATION_ANNOTATION);
@@ -61,6 +74,12 @@ public class GraphqlCodegen {
         if (mappingConfig.getGenerateApis() == null) {
             mappingConfig.setGenerateApis(DefaultMappingConfigValues.DEFAULT_GENERATE_APIS);
         }
+        if (mappingConfig.getGenerateSingleApi() == null) {
+            mappingConfig.setGenerateSingleApi(DefaultMappingConfigValues.DEFAULT_GENERATE_SINGLE_QUERY_INTERFACE);
+        }
+        if (mappingConfig.getNeedDataFetchingEnvironmentParamInSingleApi() == null) {
+            mappingConfig.setNeedDataFetchingEnvironmentParamInSingleApi(DefaultMappingConfigValues.DEFAULT_NEED_DATAFETCHINGENVIRONMENT_PARAM_INSINGLEAPI);
+        }
     }
 
 
@@ -73,6 +92,26 @@ public class GraphqlCodegen {
             processDocument(document);
             System.out.println(String.format("Finished processing schema '%s' in %d ms", schema, System.currentTimeMillis() - startTime));
         }
+    }
+
+    private List<String> releaseSchemasInDirPath(String[] graphqlSchemaPaths) {
+        return Stream.of(graphqlSchemaPaths)
+                .flatMap(schemaPath -> {
+                    if (Files.isRegularFile(Paths.get(schemaPath))) {
+                        return Stream.of(schemaPath);
+                    } else {
+                        try {
+                            return Files.find(Paths.get(schemaPath),
+                                    Integer.MAX_VALUE,
+                                    (path, basicFileAttributes) -> basicFileAttributes.isRegularFile()
+                            ).map(path -> path.toString());
+                        } catch (IOException e) {
+                            throw new RuntimeException("find graphql file failed");
+                        }
+                    }
+                })
+                .filter(path -> path.matches("^.*\\.graphql[s]?$"))
+                .collect(Collectors.toList());
     }
 
     private void processDocument(Document document) throws IOException, TemplateException {
@@ -118,14 +157,29 @@ public class GraphqlCodegen {
     }
 
     private void generateOperation(ObjectTypeDefinition definition) throws IOException, TemplateException {
-        if (Boolean.TRUE.equals(mappingConfig.getGenerateApis())) {
-            for (FieldDefinition fieldDef : definition.getFieldDefinitions()) {
-                Map<String, Object> dataModel = FieldDefinitionToDataModelMapper.map(mappingConfig, fieldDef, definition.getName());
-                GraphqlCodegenFileCreator.generateFile(FreeMarkerTemplatesRegistry.operationsTemplate, dataModel, outputDir);
+        if (mappingConfig.getGenerateApis()) {
+            if (mappingConfig.getGenerateSingleApi()) {
+                for (FieldDefinition fieldDef : definition.getFieldDefinitions()) {
+                    Map<String, Object> dataModel = FieldDefinitionToDataModelMapper.map(mappingConfig, fieldDef, definition.getName());
+                    GraphqlCodegenFileCreator.generateFile(FreeMarkerTemplatesRegistry.operationsTemplate, dataModel, outputDir);
+                }
             }
             // We need to generate a root object to workaround https://github.com/facebook/relay/issues/112
             Map<String, Object> dataModel = ObjectDefinitionToDataModelMapper.map(mappingConfig, definition);
+            warpIfNeedDataFetchingEnvioronment(dataModel);
             GraphqlCodegenFileCreator.generateFile(FreeMarkerTemplatesRegistry.operationsTemplate, dataModel, outputDir);
+        }
+    }
+
+    private void warpIfNeedDataFetchingEnvioronment(Map<String, Object> dataModel) {
+        if (mappingConfig.getNeedDataFetchingEnvironmentParamInSingleApi()) {
+            ((Set<String>) dataModel.get(DataModelFields.IMPORTS)).add("graphql.schema");
+            ParameterDefinition parameterDefinition = new ParameterDefinition();
+            parameterDefinition.setName("env");
+            parameterDefinition.setType("DataFetchingEnvironment");
+            for (OperationDefinition operationDefinition : ((List<OperationDefinition>) dataModel.get(DataModelFields.OPERATIONS))) {
+                operationDefinition.getParameters().add(parameterDefinition);
+            }
         }
     }
 

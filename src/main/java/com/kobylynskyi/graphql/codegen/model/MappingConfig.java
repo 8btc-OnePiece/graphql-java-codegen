@@ -1,9 +1,7 @@
 package com.kobylynskyi.graphql.codegen.model;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import lombok.Data;
 
@@ -29,7 +27,17 @@ public class MappingConfig implements Combinable<MappingConfig> {
      */
     private Map<String, String> customAnnotationsMapping = new HashMap<>();
 
+    /**
+     * Custom directives for type's generic
+     * e.g.: HumanConnection @connection(for:"Men")
+     * key:directive name - connection
+     * value:generic argument name - for
+     */
+    private Map<String, String> customGenericsMapping = new HashMap<>();
+
     private Boolean generateApis;
+    private Boolean generateSingleApi;
+    private Boolean needDataFetchingEnvironmentParamInSingleApi;
     private String packageName;
     private String apiPackageName;
     private String modelPackageName;
@@ -81,5 +89,8 @@ public class MappingConfig implements Combinable<MappingConfig> {
         this.subscriptionReturnType = source.subscriptionReturnType  != null ? source.subscriptionReturnType : this.subscriptionReturnType;
         this.generateEqualsAndHashCode = source.generateEqualsAndHashCode != null ? source.generateEqualsAndHashCode : this.generateEqualsAndHashCode;
         this.generateToString = source.generateToString != null ? source.generateToString : this.generateToString;
+        this.generateSingleApi = source.generateSingleApi != null ? source.generateSingleApi : this.generateSingleApi;
+        this.needDataFetchingEnvironmentParamInSingleApi = source.needDataFetchingEnvironmentParamInSingleApi != null ?
+                source.needDataFetchingEnvironmentParamInSingleApi : this.needDataFetchingEnvironmentParamInSingleApi;
     }
 }
